@@ -374,3 +374,7 @@ $ docker-compose run finetuner export
 
 The exported file (extension is .model) is saved at `model/` directory.
 
+## Refrence
+
+Mxnet-finetuner:
+https://github.com/knjcode/mxnet-finetuner(https://github.com/knjcode/mxnet-finetuner)
