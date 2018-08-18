@@ -1,0 +1,350 @@
+#!/usr/bin/env bash
+
+usage() {
+cat <<- EOS
+Usage: docker-compose run finetuner <command>
+Commands: (default is finetune)
+  finetune:                 Do fine-tuning
+  gen_train <image_size>:   Generate train and validation image recordIO files.
+  gen_test <image_size>:    Generate test image recordIO files.
+  test:                     test with specified model.
+  ensemble <valid or test>: averaging ensemble test with validation or test dataset.
+  export:                   Generate MXNet models for mxnet-model-server.
+  num_layers <model_name>:  Print the number of layers before the last fullc layer.
+  jupyter:                  Launch jupyter notebook. Add --service-port option
+                            when executing command.
+                            docker-commpose run --service-port finetuner jupyter
+  version:                  Show the mxnet-finetuner version information.
+EOS
+}
+
+version() {
+  echo 'mxnet-finetuner version 0.0.11'
+}
+
+generate_compose() {
+  local cur_dir="$1"
+  local docker_compose_file="$2"
+  local nvidia_docker_version="$3"
+  if [[ $nvidia_docker_version = "2" ]]; then
+    mo < "$cur_dir/util/compose-template-nvidia-docker2.mo" > "$cur_dir/$docker_compose_file" \
+    && echo "Generate $dockr_compose_file"
+  else
+    mo < "$cur_dir/util/compose-template.mo" > "$cur_dir/$docker_compose_file" \
+    && echo "Generate $dockr_compose_file"
+  fi
+}
+
+update_compose() {
+  local cur_dir="$1"
+  local DEVICES="$2"
+  local docker_compose_file="$3"
+  local nvidia_docker_version="$4"
+  if [[ $nvidia_docker_version != "2" ]]; then
+    if [[ "$DEVICES" = "" ]]; then
+      sed -i -e 's/knjcode\/mxnet-finetuner/knjcode\/mxnet-finetuner:cpu/' "$cur_dir/$docker_compose_file" \
+      && echo "Set use cpu docker image (knjcode/mxnet-finetuner:cpu)"
+      sed -i -e 's/awsdeeplearningteam\/mms_gpu/awsdeeplearningteam\/mms_cpu/' "$cur_dir/$docker_compose_file" \
+      && echo "Set use cpu docker image (awsdeeplearningteam/mms_cpu)"
+      sed -i -e 's/mms_app_gpu.conf/mms_app_cpu.conf/' "$cur_dir/$docker_compose_file" \
+      && echo "Set use cpu config file for mxnet-model-server (model/mms_app_cpu.conf)"
+    else
+      echo "Set use gpu docker image (knjcode/mxnet-finetuner)"
+    fi
+    sed -i -e 's/\/usr\/local\/nvidia:roFIX_VOLUME_NAME$//' "$cur_dir/$docker_compose_file"
+  fi
+}
+
+generate_config() {
+  local cur_dir="$1"
+  local config_file="$2"
+  cp "$cur_dir/util/sample_config.yml" "$cur_dir/$config_file" \
+  && echo "Generate $config_file"
+}
+
+update_config() {
+  local cur_dir="$1"
+  local DEVICES="$2"
+  local config_file="$3"
+  if [[ ! "$DEVICES" = "" ]]; then
+    sed -i -e 's/# gpus/gpus/g' "$cur_dir/$config_file" \
+    && echo "Detect GPUs. Activate common.gpus option in $config_file"
+  fi
+}
+
+generate_export_model_signature() {
+  local cur_dir="$1"
+  local MODEL_IMAGE_SIZE="$2"
+  local RGB_MEAN="$3"
+  local NUM_CLASSES="$4"
+  local EXPORT_TMP_DIR="$5"
+  mo < "$cur_dir/export_tmpl/signature.mo" > "$EXPORT_TMP_DIR/signature.json" \
+  && echo "Generate signature.json"
+}
+
+generate_export_model_service() {
+  local cur_dir="$1"
+  local CENTER_CROP="$2"
+  local TOP_K="$3"
+  local SERVICE_TMP_DIR="$4"
+  if [[ "$CENTER_CROP" = '1' ]]; then
+    mo < "$cur_dir/export_tmpl/mxnet_vision_service_center_crop.mo" > "$SERVICE_TMP_DIR/mxnet_finetuner_service.py" \
+    && echo "Generate mxnet_finetuner_service.py"
+  else
+    mo < "$cur_dir/export_tmpl/mxnet_vision_service.mo" > "$SERVICE_TMP_DIR/mxnet_finetuner_service.py" \
+    && echo "Generate mxnet_finetuner_service.py"
+  fi
+}
+
+generate_export_model_conf() {
+  local cur_dir="$1"
+  local MODEL_NAME="$2"
+  local MODEL_FILE="$3"
+  mo < "$cur_dir/export_tmpl/mms_app_cpu.conf.mo" > model/mms_app_cpu.conf \
+  && echo "Saved mms config for cpu \"model/mms_app_cpu.conf\""
+  mo < "$cur_dir/export_tmpl/mms_app_gpu.conf.mo" > model/mms_app_gpu.conf \
+  && echo "Saved mms config for gpu \"model/mms_app_gpu.conf\""
+}
+
+check_from_scratch() {
+  local model="$1"
+  if [[ "$model" = scratch-* ]]; then
+    echo 0
+  else
+    echo 1
+  fi
+}
+
+trim_scratch() {
+  local model="$1"
+  if [[ $(check_from_scratch "$model") -eq 0 ]]; then
+    echo "$model" | sed -e 's/^scratch-//'
+  else
+    echo "$momdel"
+  fi
+}
+
+check_has_num_layers() {
+  local model="$1"
+  if [[ "$model" = *resnet-v1-* ]]; then
+    echo 0
+  elif [[ "$model" = *resnet-* ]]; then
+    echo 0
+  elif [[ "$model" = *resnext-* ]]; then
+    echo 0
+  elif [[ "$model" = *vgg-* ]]; then
+    echo 0
+  else
+    echo 1
+  fi
+}
+
+check_resnet_num_layers() {
+  # Specify the number of layers for N in scratch-resnet-v1, scratch-resnet and scratch-resnext.
+  # N can be set to 18, 34, 50, 101, 152, 200 and 269.
+  local model="$1"
+  if [[ $(check_has_num_layers "$model") -eq 0 ]]; then
+    # num-layers
+    if [[ "$model" =~ 18|34|50|101|152|200|269 ]]; then
+      echo 0
+    else
+      echo 1
+    fi
+  else
+    # do not have num-layers
+    echo 1
+  fi
+}
+
+check_vgg_num_layers() {
+  # Specify the number of layers for N in scratch-vgg.
+  # N can be set to 11, 13, 16 and 19.
+  local model="$1"
+  if [[ $(check_has_num_layers "$model") -eq 0 ]]; then
+    # num-layers
+    if [[ "$model" =~ 11|13|16|19 ]]; then
+      echo 0
+    else
+      echo 1
+    fi
+  else
+    # do not have num-layers
+    echo 1
+  fi
+}
+
+get_resnet_num_layers() {
+  local model="$1"
+  if [[ $(check_resnet_num_layers "$model") -eq 0 ]]; then
+    echo "$model" | awk -F - '{ print $NF }'
+  else
+    echo 'null'
+  fi
+}
+
+get_vgg_num_layers() {
+  local model="$1"
+  if [[ $(check_vgg_num_layers "$model") -eq 0 ]]; then
+    echo "$model" | awk -F - '{ print $NF }'
+  else
+    echo 'null'
+  fi
+}
+
+get_num_layers() {
+  local model="$1"
+
+  if [[ "$model" = *vgg-* ]]; then
+    get_vgg_num_layers "$model"
+  elif [[ "$model" = *resnet-v1-* ]]; then
+    get_resnet_num_layers "$model"
+  elif [[ "$model" = *resnet-* ]]; then
+    get_resnet_num_layers "$model"
+  elif [[ "$model" = *resnext-* ]]; then
+    get_resnet_num_layers "$model"
+  else
+    echo 'null'
+  fi
+}
+
+trim_num_layers() {
+  local model="$1"
+  echo "$model" | sed -e 's/-[0-9]*$//'
+}
+
+get_conf() {
+  local config="$1"
+  local param="$2"
+  local default="$3"
+  local value
+  value=$(echo "$config" | jq -r "$param")
+  if [[ "$value" = 'null' ]]; then
+    value="$default"
+  fi
+  echo "$value"
+}
+
+get_conf_array() {
+  local config="$1"
+  local param="$2"
+  local default="$3"
+  local value
+  value=$(echo "$config" | jq -r "$param")
+  if [[ "$value" = 'null' ]]; then
+    value="$default"
+  else
+    value=$(echo "$config" | jq -r "$param | .[]")
+  fi
+  echo "$value"
+}
+
+get_image_size() {
+  local MODEL="$1"
+  if [[ "$MODEL" = *caffenet* ]]; then
+    IMAGE_SIZE=227
+  elif [[ "$MODEL" = *squeezenet* ]]; then
+    IMAGE_SIZE=227
+  elif [[ "$MODEL" = *alexnet* ]]; then
+    IMAGE_SIZE=227
+  elif [[ "$MODEL" = *googlenet* ]]; then
+    IMAGE_SIZE=299
+  elif [[ "$MODEL" = *inception-v3* ]]; then
+    IMAGE_SIZE=299
+  elif [[ "$MODEL" = *inception-v4* ]]; then
+    IMAGE_SIZE=299
+  elif [[ "$MODEL" = *inception-resnet-v2* ]]; then
+    IMAGE_SIZE=299
+  else
+    IMAGE_SIZE=224
+  fi
+  echo "$IMAGE_SIZE"
+}
+
+download_inception_v3_model() {
+  if [ ! -e inception-v3.tar.gz ]; then
+    wget http://data.dmlc.ml/models/imagenet/inception-v3.tar.gz
+  fi
+  tar xf inception-v3.tar.gz
+  mv model/Inception-7-0001.params model/imagenet1k-inception-v3-0000.params
+  mv model/Inception-7-symbol.json model/imagenet1k-inception-v3-symbol.json
+}
+
+check_inception_v3_model() {
+  if [ ! -e "/mxnet/example/image-classification/model/imagenet1k-inception-v3-0000.params" ]; then
+    download_inception_v3_model
+  fi
+}
+
+gdrive_download () {
+  local FILEID="$1"
+  local FILENAME="$2"
+  CONFIRM=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \
+  "https://docs.google.com/uc?export=download&id=$1" -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')
+  wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$CONFIRM&id=$1" -O $2
+  rm -rf /tmp/cookies.txt
+}
+
+download_se_resnext_50_model() {
+  gdrive_download "0B_M7XF_l0CzXOHNybXVWLWZteEE" "model/imagenet1k-se-resnext-50-0000.params"
+  wget "https://raw.githubusercontent.com/bruinxiong/SENet.mxnet/master/se-resnext-imagenet-50-0-symbol.json" \
+  -O "model/imagenet1k-se-resnext-50-symbol.json"
+}
+
+check_se_resnext_50_model() {
+  if [ ! -e "/mxnet/example/image-classification/model/imagenet1k-se-resnext-50-0000.params" ]; then
+    download_se_resnext_50_model
+  fi
+}
+
+download_densenet_169_model() {
+  gdrive_download "0B_M7XF_l0CzXX3V3WXJoUnNKZFE" "model/imagenet1k-densenet-169-0000.params"
+  wget "https://raw.githubusercontent.com/bruinxiong/densenet.mxnet/master/densenet-imagenet-169-0-symbol.json" \
+  -O "model/imagenet1k-densenet-169-symbol.json"
+}
+
+check_densenet_169_model() {
+  if [ ! -e "/mxnet/example/image-classification/model/imagenet1k-densenet-169-0000.params" ]; then
+    download_densenet_169_model
+  fi
+}
+
+get_layer_before_fullc() {
+  local MODEL="$1"
+  if [[ $MODEL = *caffenet* ]]; then
+    LAYER_BEFORE_FULLC="flatten_0"
+  elif [[ $MODEL = *vgg* ]]; then
+    LAYER_BEFORE_FULLC="flatten_0"
+  elif [[ $MODEL = *nin* ]]; then
+    LAYER_BEFORE_FULLC="flatten"
+  elif [[ $MODEL = *squeezenet* ]]; then
+    LAYER_BEFORE_FULLC="flatten"
+  elif [[ $MODEL = *inception-v3* ]]; then
+    LAYER_BEFORE_FULLC="flatten"
+    check_inception_v3_model
+  elif [[ $MODEL = *inception* ]]; then
+    LAYER_BEFORE_FULLC="flatten"
+  elif [[ $MODEL = *resnet* ]]; then
+    LAYER_BEFORE_FULLC="flatten0"
+  elif [[ $MODEL = *se-resnext-50* ]]; then
+    LAYER_BEFORE_FULLC="flatten0"
+    check_se_resnext_50_model
+  elif [[ $MODEL = *resnext* ]]; then
+    LAYER_BEFORE_FULLC="flatten0"
+  elif [[ $MODEL = *densenet* ]]; then
+    LAYER_BEFORE_FULLC="flatten0"
+    check_densenet_169_model
+  else
+    LAYER_BEFORE_FULLC="flatten_0"
+  fi
+  echo "$LAYER_BEFORE_FULLC"
+}
+
+print_classification_report() {
+  local report="$1"
+  local body
+
+  body=$(cat "$report" | tail -n +4 | \
+        sed -e 's/precision/a precision/' -e 's/avg \/ total/avg\/total/' | \
+        column -t | sed -e 's/^a /  /' | sed -e '2i \ ' | sed -e '$ i \ ')
+  echo "$body"
+}

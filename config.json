@@ -1,0 +1,54 @@
+{
+  "export": {
+    "use_latest": 1
+  }, 
+  "common": {
+    "num_threads": 8, 
+    "gpus": 0
+  }, 
+  "test": {
+    "use_latest": 1, 
+    "classification_report_output": 1, 
+    "test_batch_size": 10, 
+    "confusion_matrix_output": 1
+  }, 
+  "finetune": {
+    "max_random_shear_ratio": 0.01, 
+    "disp_batches": 10, 
+    "wd": 1e-05, 
+    "models": [
+      "imagenet1k-inception-v3"
+    ], 
+    "batch_size": 10, 
+    "lr_factor": 0.1, 
+    "random_mirror": 1, 
+    "mom": 0.9, 
+    "num_epochs": 20, 
+    "auto_test": 1, 
+    "optimizers": [
+      "sgd"
+    ], 
+    "num_active_layers": 1, 
+    "max_random_aspect_ratio": 0.05, 
+    "max_random_rotate_angle": 30, 
+    "train_accuracy_graph_output": 1, 
+    "lr": 0.0001, 
+    "random_crop": 1, 
+    "lr_step_epochs": 10
+  }, 
+  "data": {
+    "quality": 100, 
+    "shuffle": 1, 
+    "center_crop": 0
+  }, 
+  "ensemble": {
+    "models": [
+      "20180130074818-imagenet1k-nin-nadam-0003", 
+      "20180130075252-imagenet1k-squeezenet-nadam-0003", 
+      "20180131105109-imagenet1k-caffenet-nadam-0003"
+    ], 
+    "confusion_matrix_output": 1, 
+    "ensemble_batch_size": 20, 
+    "classification_report_output": 1
+  }
+}
