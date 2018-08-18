@@ -126,7 +126,7 @@ test:
 ```
 
 ![p1](mxnet-retain.png)
-![p1](mxnet-retain1.png)
+![p2](mxnet-retain1.png)
 ### 4. Predict with trained models
 
 Select the trained model and epoch you want to use for testing and edit `config.yml`
