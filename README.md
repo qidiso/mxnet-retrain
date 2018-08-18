@@ -207,3 +207,170 @@ Single TITAN X (Maxwell) with batch size 40
 
 For details, please check [Benchmark](docs/benchmark.md)
 
+## Utilities
+
+### util/counter.sh
+
+Count the number of files in each subdirectory.
+
+```
+$ util/counter.sh testdir
+testdir contains 4 directories
+Leopards    197
+Motorbikes  198
+airplanes   199
+watch       200
+```
+
+### util/move_images.sh
+
+Move the specified number of jpeg images from the target directory to the output directory while maintaining the directory structure.
+
+```
+$ util/move_images.sh 20 testdir newdir
+processing Leopards
+processing Motorbikes
+processing airplanes
+processing watch
+$ util/counter.sh newdir
+newdir contains 4 directories
+Leopards    20
+Motorbikes  20
+airplanes   20
+watch       20
+```
+
+### Prepare sample images for fine-tuning
+
+Download [Caltech 101] dataset, and split part of it into the `example_images` directory.
+
+```
+$ util/caltech101_prepare.sh
+```
+
+- `example_images/train` is train set of 60 images for each classes
+- `example_images/valid` is validation set of 20 images for each classes
+- `example_imags/test` is test set of 20 images for each classes
+
+```
+$ util/counter.sh example_images/train
+example_images/train contains 10 directories
+Faces       60
+Leopards    60
+Motorbikes  60
+airplanes   60
+bonsai      60
+car_side    60
+chandelier  60
+hawksbill   60
+ketch       60
+watch       60
+```
+
+With this data you can immediately try fine-tuning.
+
+```
+$ util/caltech101_prepare.sh
+$ rm -rf images
+$ mv exmaple_images images
+$ docker-compose run finetuner
+```
+
+
+
+## Misc
+
+### How to freeze layers during fine-tuning
+
+If you set the number of target layer to `finetune.num_active_layers` in `config.yml` as below, only layers whose number is not greater than the number of the specified layer will be train.
+
+```
+finetune:
+  models:
+    - imagenet1k-nin
+  optimizers:
+    - sgd
+  num_active_layers: 6
+```
+
+The default for `finetune.num_active_layers` is `0`, in which case all layers are trained.
+
+If you set `1` to `finetune.num_active_layers`, only the last fully-connected layers are trained.
+
+You can check the layer numbers of various pretrained models with `num_layers` command.
+
+```
+$ docker-compose run finetuner num_layers <pretrained model name>
+```
+
+For details, please check [How to freeze layers during fine-tuning](docs/freeze_layers.md)
+
+
+### Training from scratch
+
+Edit `config.yml` as below.
+
+```
+finetune:
+  models:
+    - scratch-alexnet
+```
+
+You can also run fine-tuning and training from scratch together.
+
+```
+finetune:
+  models:
+    - imagenet1k-inception-v3
+    - scratch-inception-v3
+```
+
+For details, please check [Available models training from scratch](docs/train_from_scratch.md)
+
+
+## Averaging ensemble test with trained models
+
+You can do averaging ensemble test using multiple trained models.
+
+If you want to use the following the three trained models,
+
+- `model/20180130074818-imagenet1k-nin-nadam-0003.params`
+- `model/20180130075252-imagenet1k-squeezenet-nadam-0003.params`
+- `model/20180131105109-imagenet1k-caffenet-nadam-0003.params`
+
+edit `config.yml` as blow.
+
+```
+ensemble:
+  models:
+    - 20180130074818-imagenet1k-nin-nadam-0003
+    - 20180130075252-imagenet1k-squeezenet-nadam-0003
+    - 20180131105109-imagenet1k-caffenet-nadam-0003
+```
+
+
+When you are done, you can do averaging ensemble test with the following command.
+
+```
+$ docker-compose run finetuner ensemble test
+```
+
+If you want to use validation dataset, do as follows.
+
+```
+$ docker-compose run finetuner ensemble valid
+```
+
+Averaging ensemble test result and classification report and/or confusion matrix are save at `logs/` directory.
+
+
+## Export your trained model
+
+You can export your trained model in a format that can be used with [Model Server for Apache MXNet] as follows.
+
+```
+$ docker-compose run finetuner export
+```
+
+The exported file (extension is .model) is saved at `model/` directory.
+
