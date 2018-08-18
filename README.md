@@ -125,7 +125,7 @@ test:
   confusion_matrix_slack_upload: 1
 ```
 
-
+![p1](mxnet-retain.png)
 ### 4. Predict with trained models
 
 Select the trained model and epoch you want to use for testing and edit `config.yml`
