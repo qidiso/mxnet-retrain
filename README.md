@@ -24,7 +24,7 @@ RUN pip install \
   
   ## Setup
 
-  ```
+  
   ### 1. Arrange images into their respective directories
 
 A training data directory (`images/train`), validation data directory (`images/valid`), and test data directory (`images/test`) should containing one subdirectory per image class.
