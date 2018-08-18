@@ -134,24 +134,24 @@ for MODEL in $MODELS; do
   if [ "$DATA_TRAIN/images-train-$IMAGE_SIZE.rec" -ot "$TRAIN" ]; then
     echo "$DATA_TRAIN/images-train-$IMAGE_SIZE.rec does not exist or is outdated." 1>&2
     echo 'Generate image records for fine-tuning.' 1>&2
-    $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$IMAGE_SIZE" || exit 1
+    sh $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$IMAGE_SIZE" || exit 1
   fi
   if [ "$DATA_VALID/images-valid-$IMAGE_SIZE.rec" -ot "$VALID" ]; then
     echo "$DATA_VALID/images-valid-$IMAGE_SIZE.rec does not exist or is outdated." 1>&2
     echo 'Generate validation image records for fine-tuning.' 1>&2
-    $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$IMAGE_SIZE" || exit 1
+    sh $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$IMAGE_SIZE" || exit 1
   fi
   if [ "$DATA_VALID/images-valid-$MODEL_IMAGE_SIZE.rec" -ot "$VALID" ]; then
     echo "$DATA_VALID/images-valid-$MODEL_IMAGE_SIZE.rec does not exist or is outdated." 1>&2
     echo 'Generate validation image records for fine-tuning.' 1>&2
-    $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$MODEL_IMAGE_SIZE" || exit 1
+    sh $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$MODEL_IMAGE_SIZE" || exit 1
   fi
 
   # Check the number of image files. If it is different from previous one, regenerate images records
 
   echo "$DATA_VALID/images-valid-$MODEL_IMAGE_SIZE.rec is outdated." 1>&2
   echo 'Generate validation image records for fine-tuning.' 1>&2
-  $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$MODEL_IMAGE_SIZE" || exit 1
+  sh $CUR_DIR/gen_train.sh "$CONFIG_FILE" "$MODEL_IMAGE_SIZE" || exit 1
 
 
 
