@@ -1,7 +1,7 @@
 # mxnet-finetuner-for-mac-no-docker
 Create mxnet fine tuner for mac ,no need install docker and support GPU(egpu).
 ## Prerequisites
-python 2.7 mxnet or mxnet-cu80 (you need setup egpu for mac)
+python 2.7 mxnet(cpu) or mxnet-cu80 (you need setup egpu for mac)
 RUN pip install \
   attrdict \
   awscli \
